@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Registers two GitHub Actions runner instances on a freshly-booted pool VM
+# (provisioned by cloud-init.yaml) as long-lived, non-ephemeral, org-level
+# runners, then starts them as systemd services.
+#
+# Run over SSH from hetzner-pool-recycle.yml, which holds the secrets this
+# script needs — never commit a filled-in copy of this with real values.
+#
+# Required environment:
+#   RUNNER_PAT    fine-grained GitHub PAT, resource owner = promptics org,
+#                 Organization permissions -> "Self-hosted runners" ->
+#                 Read and write (to mint a runner registration token)
+#   RUNNER_LABEL  label callers use in runs-on:, e.g. "promptics-pool"
+#   POOL_NAME     name prefix for this VM's two runner registrations,
+#                 e.g. "hetzner-pool-01" -> hetzner-pool-01-a / -b
+
+set -euo pipefail
+
+: "${RUNNER_PAT:?RUNNER_PAT is required}"
+: "${RUNNER_LABEL:?RUNNER_LABEL is required}"
+: "${POOL_NAME:?POOL_NAME is required}"
+
+ORG=promptics
+
+for slot_num in 1 2; do
+  suffix=$([ "$slot_num" = "1" ] && echo "a" || echo "b")
+  dir="/opt/actions-runner-${slot_num}"
+  name="${POOL_NAME}-${suffix}"
+
+  echo "== Registering ${name} in ${dir} =="
+
+  # Mint a fresh org-level registration token (valid ~1 hour, single use).
+  reg_token=$(curl -fsSL -X POST \
+    -H "Authorization: token ${RUNNER_PAT}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/orgs/${ORG}/actions/runners/registration-token" \
+    | jq -r '.token')
+
+  sudo -u runner bash -c "
+    cd '${dir}'
+    ./config.sh \
+      --url 'https://github.com/${ORG}' \
+      --token '${reg_token}' \
+      --name '${name}' \
+      --labels '${RUNNER_LABEL},linux,x64' \
+      --work '_work' \
+      --unattended \
+      --replace
+  "
+
+  # Install + start as a systemd service (svc.sh ships in the runner tarball).
+  (cd "$dir" && ./svc.sh install runner && ./svc.sh start)
+
+  echo "== ${name} registered and running =="
+done
+
+echo "Pool VM ready: 2 runner slots, label=${RUNNER_LABEL}"

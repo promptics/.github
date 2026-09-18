@@ -1,0 +1,75 @@
+#cloud-config
+# Base OS provisioning for the promptics persistent Hetzner runner pool.
+#
+# No secrets in this file — safe to commit and to pass as Hetzner
+# `--user-data`. Runner registration (which needs RUNNER_PAT) happens
+# afterwards via setup-pool.sh, run over SSH from hetzner-pool-recycle.yml.
+#
+# Toolchain list copied from promptLM/.github's hetzner-snapshot-bake.yml
+# baseline (see docs/decision-log.md D-03) — same languages, same versions,
+# so a workflow that runs fine on promptLM's ephemeral runner behaves the
+# same way here.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - openjdk-17-jdk-headless
+  - openjdk-21-jdk-headless
+  - maven
+  - git
+  - curl
+  - wget
+  - jq
+  - unzip
+  - tar
+  - gzip
+  - make
+  - ca-certificates
+
+runcmd:
+  # Docker
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+
+  # Node 22 LTS
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - npm install -g pnpm yarn
+
+  # Gradle 8.x (apt's version lags; fetch from gradle.org, same as promptLM's bake)
+  - GRADLE_VERSION=8.10 && wget -q "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -O /tmp/gradle.zip
+  - unzip -q /tmp/gradle.zip -d /opt/
+  - ln -sf /opt/gradle-8.10/bin/gradle /usr/local/bin/gradle
+  - rm /tmp/gradle.zip
+
+  # runner user, docker group
+  - useradd -m -s /bin/bash runner || true
+  - usermod -aG docker runner
+  - mkdir -p /opt/actions-runner-1 /opt/actions-runner-2
+  - chown -R runner:runner /opt/actions-runner-1 /opt/actions-runner-2
+
+  # Download (not configure) the GitHub Actions runner binary into both
+  # slot directories. setup-pool.sh does `./config.sh` + service install
+  # once RUNNER_PAT is available — that step needs a secret, this one
+  # doesn't.
+  - |
+    RUNNER_VERSION=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+    for slot in actions-runner-1 actions-runner-2; do
+      cd /opt/$slot
+      curl -fsSL -o runner.tar.gz \
+        "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
+      tar xzf runner.tar.gz
+      rm runner.tar.gz
+      chown -R runner:runner /opt/$slot
+    done
+
+  # Verify toolchain
+  - docker --version
+  - java -version
+  - mvn -v
+  - gradle -v
+  - node --version
+
+  # Signal readiness for the recycle workflow's SSH-wait loop
+  - touch /opt/cloud-init-done

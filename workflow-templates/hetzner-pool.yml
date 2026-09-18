@@ -1,0 +1,30 @@
+# Run CI jobs on the promptics Hetzner runner pool instead of GitHub-hosted
+# Linux. Best fit for short, frequent jobs (unit tests, lint, gates) — the
+# pool is always on, so there's no per-run provisioning wait or cost.
+#
+# Required org-level secrets HCLOUD_TOKEN and RUNNER_PAT and the
+# promptics-pool runner group should already be set up; see
+# https://github.com/promptics/.github#hetzner-runner-pool.
+#
+# Not what you need? For a long (20+ min) acceptance/integration suite,
+# use promptLM/.github's ephemeral Hetzner pattern instead — see
+# docs/hetzner-pool.md "Why a pool, not the ephemeral pattern".
+
+name: CI (Hetzner pool)
+
+on:
+  push:
+    branches: [$default-branch]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: [self-hosted, promptics-pool]
+    # Uncomment to isolate a non-idempotent job from other jobs sharing
+    # the pool VM (see docs/hetzner-pool.md point 1 under Quick start):
+    # container: eclipse-temurin:21-jdk
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run tests
+        run: echo "replace with your actual build/test command"

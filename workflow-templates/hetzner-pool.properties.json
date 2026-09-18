@@ -1,0 +1,15 @@
+{
+  "name": "Hetzner pool job",
+  "description": "Run short/frequent CI jobs on the always-on promptics Hetzner runner pool instead of GitHub-hosted Linux. Best for unit tests, lint, and gates firing often.",
+  "iconName": "octicon server",
+  "categories": [
+    "Continuous integration",
+    "Testing"
+  ],
+  "filePatterns": [
+    "pom.xml$",
+    "build.gradle$",
+    "build.gradle.kts$",
+    "package.json$"
+  ]
+}
