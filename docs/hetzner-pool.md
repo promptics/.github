@@ -216,16 +216,24 @@ without systemd noticing. SSH in (`hcloud server ip hetzner-pool-<ts>`),
 check `systemctl status actions.runner.*`. If it won't recover, just
 trigger the recycle workflow manually — it's idempotent.
 
-**Two jobs interfere with each other.** Expected risk of a non-ephemeral
-runner — add `container:` to isolate, or make one slot `--ephemeral` in
-`setup-pool.sh` if this becomes routine (loses zero-latency for that slot).
-Observed once during the `promptics-speech` load test: a `pnpm: command
-not found` on a step after `pnpm/action-setup` had just run successfully
-earlier in the same job, on a slot that had run several other jobs
-back-to-back — looked like PATH state from `$GITHUB_PATH` not resetting
-cleanly between jobs on the same slot. Single occurrence out of 18 jobs;
-treat a recurrence as a signal to isolate that specific job with
-`container:` rather than something to chase further speculatively.
+**Two jobs interfere with each other.** Root cause found and fixed: both
+slots used to run as the same Linux user (`runner`), sharing one `$HOME` —
+anything that caches there (`pnpm/action-setup`'s install dir, `~/.npm`,
+etc.) could race between two concurrent jobs on the two different slots.
+Confirmed reproducing this exact way porting `agentskills`' `tests.yml`:
+`pnpm/action-setup` failed with `ENOTEMPTY: directory not empty, rmdir
+'/home/runner/setup-pnpm/node_modules/.bin/store/v3/files/01'` — two jobs
+mid-install on the same cache path at once. Fixed by giving each slot its
+own user (`runner-a` / `runner-b`, each their own `$HOME`) — see
+`cloud-init.yaml` and `setup-pool.sh`. The earlier `pnpm: command not
+found` flake seen during the `promptics-speech` load test was very likely
+the same root cause, milder manifestation.
+
+Residual risk after the fix: two jobs *on the same slot*, back-to-back,
+still share that slot's `$HOME` and workspace — still add `container:` to
+isolate a job that's not safely idempotent, or make one slot `--ephemeral`
+in `setup-pool.sh` if that becomes routine (loses zero-latency for that
+slot).
 
 **Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`.
 Confirm it's a **classic** PAT with `admin:org` — a fine-grained PAT
