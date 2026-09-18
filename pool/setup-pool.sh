@@ -26,8 +26,13 @@ for slot_num in 1 2; do
   suffix=$([ "$slot_num" = "1" ] && echo "a" || echo "b")
   dir="/opt/actions-runner-${slot_num}"
   name="${POOL_NAME}-${suffix}"
+  # Each slot runs as its own Linux user (runner-a / runner-b), each with
+  # its own $HOME -- see cloud-init.yaml for why: sharing one "runner"
+  # user let two concurrent jobs race on the same pnpm/npm cache path and
+  # corrupt each other's install.
+  user="runner-${suffix}"
 
-  echo "== Registering ${name} in ${dir} =="
+  echo "== Registering ${name} in ${dir} as ${user} =="
 
   # Mint a fresh org-level registration token (valid ~1 hour, single use).
   reg_token=$(curl -fsSL -X POST \
@@ -36,7 +41,7 @@ for slot_num in 1 2; do
     "https://api.github.com/orgs/${ORG}/actions/runners/registration-token" \
     | jq -r '.token')
 
-  sudo -u runner bash -c "
+  sudo -u "$user" bash -c "
     cd '${dir}'
     ./config.sh \
       --url 'https://github.com/${ORG}' \
@@ -48,10 +53,11 @@ for slot_num in 1 2; do
       --replace
   "
 
-  # Install + start as a systemd service (svc.sh ships in the runner tarball).
-  (cd "$dir" && ./svc.sh install runner && ./svc.sh start)
+  # Install + start as a systemd service (svc.sh ships in the runner
+  # tarball; the argument is which Linux user the service runs as).
+  (cd "$dir" && ./svc.sh install "$user" && ./svc.sh start)
 
-  echo "== ${name} registered and running =="
+  echo "== ${name} registered and running as ${user} =="
 done
 
 echo "Pool VM ready: 2 runner slots, label=${RUNNER_LABEL}"
