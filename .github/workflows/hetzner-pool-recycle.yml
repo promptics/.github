@@ -70,14 +70,27 @@ jobs:
 
       - name: Create new pool VM
         id: new_vm
+        env:
+          # Optional: name of a human's SSH key already registered in the
+          # Hetzner project (Console -> Security -> SSH Keys), attached
+          # alongside the automation-only key above so someone can actually
+          # SSH in later for the "SSH in and check systemctl status"
+          # troubleshooting step in docs/hetzner-pool.md — the pool-recycle
+          # key above is deleted at the end of this same run. Unset ->
+          # skipped, only the ephemeral automation key goes on the VM.
+          ADMIN_SSH_KEY_NAME: ${{ vars.HETZNER_ADMIN_SSH_KEY_NAME }}
         run: |
           new_name="hetzner-pool-$(date -u +%Y%m%d%H%M%S)"
+          ssh_key_args=(--ssh-key pool-recycle)
+          if [ -n "$ADMIN_SSH_KEY_NAME" ]; then
+            ssh_key_args+=(--ssh-key "$ADMIN_SSH_KEY_NAME")
+          fi
           hcloud server create \
             --name "$new_name" \
             --type "$SERVER_TYPE" \
             --location "$LOCATION" \
             --image ubuntu-24.04 \
-            --ssh-key pool-recycle \
+            "${ssh_key_args[@]}" \
             --user-data-from-file pool/cloud-init.yaml \
             --label role=promptics-pool
           echo "name=$new_name" >> "$GITHUB_OUTPUT"

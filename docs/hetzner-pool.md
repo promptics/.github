@@ -98,6 +98,25 @@ Under `https://github.com/organizations/promptics/settings/secrets/actions`:
 | `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) | Selected repos: `.github`, plus repos onboarding to the pool |
 | `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write | Same as above |
 
+### Admin SSH access (optional but recommended)
+
+The recycle workflow generates its own throwaway SSH key each run (create,
+use, delete) — that key is gone by the time the run finishes, so it doesn't
+give a human any lasting way in. To be able to SSH into the pool VM
+yourself later (the "SSH in and check `systemctl status`" step under
+Troubleshooting), add your own key once:
+
+1. Hetzner Console → your project → Security → SSH Keys → add your public
+   key, give it a name.
+2. Set that name as an org-level **variable** (not secret — it's just a
+   name) at `https://github.com/organizations/promptics/settings/variables/actions`:
+   `HETZNER_ADMIN_SSH_KEY_NAME`.
+
+Every pool VM the recycle workflow creates will then carry both keys —
+the automation's own (deleted after each run) and yours (persists). Skip
+this and the pool still works fine; you just can't SSH in without adding
+this later.
+
 ### Runner group
 
 Under `https://github.com/organizations/promptics/settings/actions/runner-groups`:
