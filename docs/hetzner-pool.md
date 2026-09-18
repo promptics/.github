@@ -1,0 +1,185 @@
+# Hetzner runner pool
+
+Org-wide alternative to `runs-on: ubuntu-latest` for short, frequent,
+highly parallel CI jobs — the shape that's actually driving promptics'
+GitHub Actions spend (see "Why a pool, not the ephemeral pattern" below).
+
+## Quick start (downstream project)
+
+Change the runner on the jobs you're moving:
+
+```yaml
+jobs:
+  unit:
+    runs-on: [self-hosted, promptics-pool]
+    steps: [...]
+```
+
+That's the entire per-project change — no new jobs, no secrets, no `uses:`
+of a reusable workflow. The pool is always on, like a self-owned
+GitHub-hosted runner. Two things worth doing alongside the label swap:
+
+1. **Non-idempotent jobs**: the pool VM does not wipe state between jobs
+   the way a fresh ephemeral VM would — two jobs from different PRs can see
+   each other's leftover `_work` files. Testcontainers-based tests are fine
+   (ephemeral containers). Anything that writes to a shared local path
+   should add a `container:` key to isolate it:
+   ```yaml
+   jobs:
+     unit:
+       runs-on: [self-hosted, promptics-pool]
+       container: eclipse-temurin:21-jdk
+       steps: [...]
+   ```
+2. **macOS jobs cannot move here** — Hetzner Cloud has no macOS offering.
+   Leave those on `runs-on: macos-14` etc.
+
+Or pick the **"Hetzner pool job"** template from Actions → New workflow →
+"By promptics".
+
+## Why a pool, not the ephemeral pattern
+
+promptLM's `.github` repo runs a proven **ephemeral** Hetzner pattern:
+provision a VM per workflow run, execute, tear down
+(`promptLM/.github/docs/hetzner-runners.md`). It's the right fit for their
+use case — a single long acceptance suite per run.
+
+promptics' cost driver looks structurally different: a small number of
+repos firing many short, parallel jobs per push (one workflow fans out to
+13+ parallel `ubuntu-latest` jobs on every push; another fires dozens of
+times a day on `push` triggers alone). Provisioning a fresh VM per *job* at
+that volume means paying Hetzner's hourly-rounded rate once per job plus
+`ubuntu-latest` provision/teardown overhead on top of each one — plausibly
+*more* expensive than the status quo, not less.
+
+A **persistent pool** — a small number of always-on runner slots,
+recycled weekly rather than per-run — amortizes one flat VM cost across
+unlimited job-minutes instead. Cost stops scaling with commit volume.
+
+**Use the pool for:** unit tests, lint, fast/frequent gates, anything
+firing more than a few times an hour or under ~4 minutes per job.
+**Use promptLM's ephemeral pattern for:** long (20+ min), infrequent jobs —
+see their docs, and pass promptics' own `HCLOUD_TOKEN`/`RUNNER_PAT`
+explicitly rather than `secrets: inherit` since it's a cross-org call.
+
+## Why not share promptLM's setup
+
+The two patterns need different infrastructure (always-on pool vs.
+create/destroy per run), so there's no actual code or running
+infrastructure to share by pointing promptics at promptLM's Hetzner
+project — only the *design* is shared (this doc, and the toolchain list
+below, both intentionally mirroring promptLM's proven recipe). Keeping
+separate Hetzner Cloud projects/tokens per org means a compromised or
+misconfigured job in one org's repos can't touch the other org's runner
+fleet or Hetzner billing/quota, and creating a second Hetzner project costs
+nothing.
+
+## What lives where
+
+| File | Role |
+|---|---|
+| `.github/workflows/hetzner-pool-recycle.yml` | Weekly (Monday 04:00 UTC) + manual: boots a fresh pool VM, registers two runner slots, retires the previous VM. |
+| `pool/cloud-init.yaml` | Base OS provisioning (no secrets) — Ubuntu 24.04 + Docker + JDK 17/21 + Node 22 + Maven/Gradle, same toolchain promptLM's snapshot bakes. |
+| `pool/setup-pool.sh` | Runs over SSH from the recycle workflow (needs `RUNNER_PAT`): registers the two org-level runner slots as systemd services. |
+| `workflow-templates/hetzner-pool.yml` | Starter template in the "New workflow" picker. |
+
+No nightly snapshot bake is needed here (unlike promptLM's platform) — the
+pool VM boots once per week via `cloud-init.yaml` instead of once per run,
+so there's nothing to pre-bake for speed.
+
+## One-time org setup (admin)
+
+### Org-level secrets
+
+Under `https://github.com/organizations/promptics/settings/secrets/actions`:
+
+| Secret | Source | Visibility |
+|---|---|---|
+| `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) | Selected repos: `.github`, plus repos onboarding to the pool |
+| `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write | Same as above |
+
+### Runner group
+
+Under `https://github.com/organizations/promptics/settings/actions/runner-groups`:
+restrict the group the pool's runners land in to the repos that should use
+it, starting with `agentskills` and `promptics-speech`. These are private
+repos with no fork-PR traffic, which is what makes a standing (non-ephemeral)
+runner an acceptable risk here — don't add this group to a public repo or
+one building fork PRs without also adding fork-PR sandboxing.
+
+### First boot
+
+Actions tab (this repo) → "Hetzner pool recycle" → Run workflow. Takes
+~5-8 minutes (no pre-baked snapshot). Confirm two runners named
+`hetzner-pool-<timestamp>-a` / `-b` appear at
+`https://github.com/organizations/promptics/settings/actions/runners`,
+both idle/online. It then recycles itself weekly on its own.
+
+## Sizing
+
+Starts at **2 concurrent slots on one `cx33`** (4 vCPU/8 GB — same spec
+promptLM validated in production, ~€6.49/mo flat). A 13-job fan-out will
+queue behind 2 slots rather than run all at once initially — that's fine
+(GitHub queues, doesn't fail), but watch queue times after onboarding a
+repo.
+
+To scale:
+- **More slots, same VM**: `cx33` → `cx43` (8 vCPU/16 GB, ~€13-14/mo),
+  add a 3rd/4th `actions-runner-N` directory in `cloud-init.yaml` and a
+  matching iteration in `setup-pool.sh`'s loop.
+- **More VMs**: run the create step in `hetzner-pool-recycle.yml` twice
+  with different `POOL_NAME`s — only worth it if CPU, not job count,
+  becomes the bottleneck.
+
+Check current usage:
+`gh api orgs/promptics/actions/runners --paginate -q '.runners[] | {name,status,busy}'`.
+
+## Cost model
+
+| Server type | Monthly cap | Slots |
+|---|---|---|
+| `cx33` (default) | ~€6.49 | 2 |
+| `cx43` | ~€13-14 | 3-4 |
+
+Flat regardless of job volume or push frequency — the point of the pool.
+
+## Troubleshooting
+
+**A job stays queued.** Both slots busy — check with the `gh api` command
+above. If routine, scale per "Sizing".
+
+**A runner shows offline and stays that way.** Something crashed on the VM
+without systemd noticing. SSH in (`hcloud server ip hetzner-pool-<ts>`),
+check `systemctl status actions.runner.*`. If it won't recover, just
+trigger the recycle workflow manually — it's idempotent.
+
+**Two jobs interfere with each other.** Expected risk of a non-ephemeral
+runner — add `container:` to isolate, or make one slot `--ephemeral` in
+`setup-pool.sh` if this becomes routine (loses zero-latency for that slot).
+
+**Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`
+scope — needs **Self-hosted runners: Read and write** at the org level.
+(promptLM's ephemeral pattern needs repo-level `Administration` instead —
+different permission, different registration mechanism, don't confuse
+the two when copying a PAT setup from their docs.)
+
+**Two pool VMs billing simultaneously.** The recycle workflow deletes the
+previous VM only after the new one registers successfully — a mid-run
+failure can leave both up (~€13/mo instead of ~€6.49, not catastrophic).
+`hcloud server list` and delete the stale one. There's no daily orphan
+sweep here yet the way promptLM has one for their ephemeral VMs — worth
+adding if this recurs.
+
+## Source
+
+Researched 2026-09-18 by querying the GitHub Actions billing-usage API
+directly for both the `promptics` and `promptLM` orgs (`gh api
+"orgs/<org>/settings/billing/usage"`) rather than assuming spend — see the
+originating PR description for the full evidence and the ephemeral-vs-pool
+decision reasoning. The base toolchain and the `HCLOUD_TOKEN`/`RUNNER_PAT`
+naming convention are deliberately copied from promptLM's proven platform;
+the pool architecture itself is new. Cyclenerd's action is not used here
+(the pool registers runners directly via `config.sh`/`svc.sh`, since it's
+managing standing runners, not create/destroy-per-run) — see
+[actions/runner](https://github.com/actions/runner) (MIT) for the binary
+this platform installs.

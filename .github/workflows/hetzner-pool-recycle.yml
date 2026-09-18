@@ -1,0 +1,139 @@
+# Weekly recycle of the promptics Hetzner runner pool.
+#
+# Unlike promptLM's ephemeral pattern, the pool VM is NOT destroyed after
+# every job — it stays registered and running so callers get zero-latency
+# self-hosted capacity with no per-run provisioning overhead. This workflow
+# is the pool's only moving part: it boots a fresh VM weekly (OS patches,
+# toolchain refresh), registers two runner slots on it, then retires the
+# previous VM. Run it manually any time via workflow_dispatch too (e.g.
+# right after first creating the pool, or if a slot wedges).
+#
+# Lives here in promptics/.github, mirroring promptLM/.github's role for
+# their (different-shaped) ephemeral pattern. Full rationale and the
+# ephemeral-vs-pool decision: docs/hetzner-pool.md.
+#
+# Required org-level secrets (promptics org, Settings -> Secrets -> Actions):
+#   HCLOUD_TOKEN   Hetzner Cloud API token (Read & Write) — promptics' OWN
+#                  Hetzner Cloud project. Do not reuse promptLM's token —
+#                  see docs/hetzner-pool.md "Why not share promptLM's setup".
+#   RUNNER_PAT     Fine-grained PAT, resource owner = promptics,
+#                  Organization permissions -> Self-hosted runners: R/W
+
+name: Hetzner pool recycle
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"   # 04:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hetzner-pool-recycle
+  cancel-in-progress: false   # never overlap two recycles
+
+env:
+  RUNNER_LABEL: promptics-pool
+  SERVER_TYPE: cx33          # 4 vCPU / 8 GB — same spec promptLM validated
+  LOCATION: fsn1
+
+jobs:
+  recycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      RUNNER_PAT: ${{ secrets.RUNNER_PAT }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install hcloud CLI
+        run: |
+          curl -fsSL "https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin hcloud
+          hcloud version
+
+      - name: Record the currently-running pool VM (if any)
+        id: previous
+        run: |
+          old_id=$(hcloud server list -o json | jq -r '.[] | select(.name | startswith("hetzner-pool-")) | .id' | head -1)
+          old_name=$(hcloud server list -o json | jq -r '.[] | select(.name | startswith("hetzner-pool-")) | .name' | head -1)
+          echo "old_id=${old_id:-}" >> "$GITHUB_OUTPUT"
+          echo "old_name=${old_name:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate ephemeral SSH key for this recycle
+        run: |
+          ssh-keygen -t ed25519 -N "" -f /tmp/pool_key -C "hetzner-pool-recycle"
+          hcloud ssh-key delete pool-recycle 2>/dev/null || true
+          hcloud ssh-key create --name pool-recycle --public-key "$(cat /tmp/pool_key.pub)"
+
+      - name: Create new pool VM
+        id: new_vm
+        run: |
+          new_name="hetzner-pool-$(date -u +%Y%m%d%H%M%S)"
+          hcloud server create \
+            --name "$new_name" \
+            --type "$SERVER_TYPE" \
+            --location "$LOCATION" \
+            --image ubuntu-24.04 \
+            --ssh-key pool-recycle \
+            --user-data-from-file pool/cloud-init.yaml \
+            --label role=promptics-pool
+          echo "name=$new_name" >> "$GITHUB_OUTPUT"
+          echo "ip=$(hcloud server ip "$new_name")" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for cloud-init to finish
+        run: |
+          IP="${{ steps.new_vm.outputs.ip }}"
+          # cloud-init (package install + docker + node + gradle) takes
+          # longer than a plain SSH-up check; poll for the marker file
+          # cloud-init.yaml touches at the very end instead.
+          for i in $(seq 1 60); do
+            if ssh -i /tmp/pool_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                 root@"$IP" 'test -f /opt/cloud-init-done' 2>/dev/null; then
+              echo "cloud-init finished after ${i} attempt(s)"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::cloud-init never finished on $IP after 15 minutes"
+          exit 1
+
+      - name: Register runner slots on the new VM
+        env:
+          RUNNER_LABEL: ${{ env.RUNNER_LABEL }}
+          POOL_NAME: ${{ steps.new_vm.outputs.name }}
+        run: |
+          IP="${{ steps.new_vm.outputs.ip }}"
+          scp -i /tmp/pool_key -o StrictHostKeyChecking=no pool/setup-pool.sh root@"$IP":/tmp/setup-pool.sh
+          ssh -i /tmp/pool_key -o StrictHostKeyChecking=no root@"$IP" \
+            "RUNNER_PAT='${RUNNER_PAT}' RUNNER_LABEL='${RUNNER_LABEL}' POOL_NAME='${POOL_NAME}' bash /tmp/setup-pool.sh"
+
+      - name: Retire the previous pool VM
+        if: steps.previous.outputs.old_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_PAT }}
+        run: |
+          old_name="${{ steps.previous.outputs.old_name }}"
+          # Deregister both slots from GitHub first so they don't show up
+          # as permanently-offline runners in the org's runner list.
+          for suffix in a b; do
+            runner_name="${old_name}-${suffix}"
+            runner_id=$(gh api "orgs/promptics/actions/runners" --paginate \
+              -q ".runners[] | select(.name==\"${runner_name}\") | .id" || true)
+            if [ -n "$runner_id" ]; then
+              gh api -X DELETE "orgs/promptics/actions/runners/${runner_id}" || true
+            fi
+          done
+          hcloud server delete "${{ steps.previous.outputs.old_id }}"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: hcloud ssh-key delete pool-recycle 2>/dev/null || true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Pool VMs after recycle:"
+          hcloud server list -o json | jq -r '.[] | select(.name | startswith("hetzner-pool-")) | "\(.name)\t\(.status)\t\(.created)"'
