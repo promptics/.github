@@ -87,16 +87,27 @@ No nightly snapshot bake is needed here (unlike promptLM's platform) — the
 pool VM boots once per week via `cloud-init.yaml` instead of once per run,
 so there's nothing to pre-bake for speed.
 
-## One-time org setup (admin)
+## One-time setup (admin)
 
-### Org-level secrets
+**Repository-level, not org-level.** The `promptics` org is on GitHub
+Free, which doesn't offer organization secrets/variables at all (that's a
+Team/Enterprise feature) — but that turns out not to cost this design
+anything: the recycle workflow in *this* repo is the only thing that ever
+touches `HCLOUD_TOKEN`, `RUNNER_PAT`, or the SSH key name. No caller repo
+(`agentskills`, `promptics-speech`, ...) needs any secret at all — they
+only ever reference the `promptics-pool` runner label. So everything below
+is a plain **repository secret/variable on `promptics/.github`**, which
+works on every GitHub plan.
 
-Under `https://github.com/organizations/promptics/settings/secrets/actions`:
+### Secrets
 
-| Secret | Source | Visibility |
-|---|---|---|
-| `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) | Selected repos: `.github`, plus repos onboarding to the pool |
-| `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write | Same as above |
+Under `https://github.com/promptics/.github/settings/secrets/actions`
+(**Repository secrets**, not the org-level page):
+
+| Secret | Source |
+|---|---|
+| `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) |
+| `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write. (The token's *permission* is org-scoped by design — minting a runner-registration token needs that — but the *secret itself* is just stored on this one repo, same as any repo secret.) |
 
 ### Admin SSH access (optional but recommended)
 
@@ -108,8 +119,9 @@ Troubleshooting), add your own key once:
 
 1. Hetzner Console → your project → Security → SSH Keys → add your public
    key, give it a name.
-2. Set that name as an org-level **variable** (not secret — it's just a
-   name) at `https://github.com/organizations/promptics/settings/variables/actions`:
+2. Set that name as a **repository variable** (not secret — it's just a
+   name) on `promptics/.github`, under
+   `https://github.com/promptics/.github/settings/variables/actions`:
    `HETZNER_ADMIN_SSH_KEY_NAME`.
 
 Every pool VM the recycle workflow creates will then carry both keys —

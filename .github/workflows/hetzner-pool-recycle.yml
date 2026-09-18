@@ -12,12 +12,19 @@
 # their (different-shaped) ephemeral pattern. Full rationale and the
 # ephemeral-vs-pool decision: docs/hetzner-pool.md.
 #
-# Required org-level secrets (promptics org, Settings -> Secrets -> Actions):
+# Required secrets, set as REPOSITORY secrets on promptics/.github
+# (Settings -> Secrets and variables -> Actions -> Repository secrets) —
+# not organization secrets. The promptics org is on GitHub Free, which
+# doesn't offer org-level secrets/variables at all; repo-level ones work
+# on every plan, and this is the only repo that ever needs these two:
 #   HCLOUD_TOKEN   Hetzner Cloud API token (Read & Write) — promptics' OWN
 #                  Hetzner Cloud project. Do not reuse promptLM's token —
 #                  see docs/hetzner-pool.md "Why not share promptLM's setup".
 #   RUNNER_PAT     Fine-grained PAT, resource owner = promptics,
 #                  Organization permissions -> Self-hosted runners: R/W
+#                  (an org-scoped PAT can still be stored as a plain repo
+#                  secret — the permission lives on the token, not on
+#                  where the secret is kept)
 
 name: Hetzner pool recycle
 
