@@ -219,6 +219,13 @@ trigger the recycle workflow manually — it's idempotent.
 **Two jobs interfere with each other.** Expected risk of a non-ephemeral
 runner — add `container:` to isolate, or make one slot `--ephemeral` in
 `setup-pool.sh` if this becomes routine (loses zero-latency for that slot).
+Observed once during the `promptics-speech` load test: a `pnpm: command
+not found` on a step after `pnpm/action-setup` had just run successfully
+earlier in the same job, on a slot that had run several other jobs
+back-to-back — looked like PATH state from `$GITHUB_PATH` not resetting
+cleanly between jobs on the same slot. Single occurrence out of 18 jobs;
+treat a recurrence as a signal to isolate that specific job with
+`container:` rather than something to chase further speculatively.
 
 **Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`.
 Confirm it's a **classic** PAT with `admin:org` — a fine-grained PAT

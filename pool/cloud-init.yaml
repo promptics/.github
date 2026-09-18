@@ -55,6 +55,11 @@ runcmd:
   - usermod -aG docker runner
   - echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
   - chmod 0440 /etc/sudoers.d/runner
+  # GitHub's hosted runner image ships /usr/local/bin writable by the
+  # runner user specifically so "curl a binary, tar -C /usr/local/bin"
+  # installer one-liners (gitleaks, and plenty of others) work without a
+  # sudo prefix the script never included. Match that.
+  - chown runner:runner /usr/local/bin
   - mkdir -p /opt/actions-runner-1 /opt/actions-runner-2
   - chown -R runner:runner /opt/actions-runner-1 /opt/actions-runner-2
 
