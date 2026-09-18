@@ -26,6 +26,9 @@ packages:
   - gzip
   - make
   - ca-certificates
+  - shellcheck
+  - locales
+  - sudo
 
 runcmd:
   # Docker
@@ -43,9 +46,20 @@ runcmd:
   - ln -sf /opt/gradle-8.10/bin/gradle /usr/local/bin/gradle
   - rm /tmp/gradle.zip
 
-  # runner user, docker group
+  # runner user, docker group, passwordless sudo (matches GitHub-hosted
+  # runner behavior -- workflows ported from ubuntu-latest routinely
+  # `sudo apt-get install` something the base image doesn't happen to
+  # have; giving the job itself the ability to fix that is more robust
+  # than trying to pre-empt every GitHub-hosted-image package by hand)
   - useradd -m -s /bin/bash runner || true
   - usermod -aG docker runner
+  - echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
+  - chmod 0440 /etc/sudoers.d/runner
+  # GitHub's hosted runner image ships /usr/local/bin writable by the
+  # runner user specifically so "curl a binary, tar -C /usr/local/bin"
+  # installer one-liners (gitleaks, and plenty of others) work without a
+  # sudo prefix the script never included. Match that.
+  - chown runner:runner /usr/local/bin
   - mkdir -p /opt/actions-runner-1 /opt/actions-runner-2
   - chown -R runner:runner /opt/actions-runner-1 /opt/actions-runner-2
 
