@@ -79,7 +79,7 @@ nothing.
 | File | Role |
 |---|---|
 | `.github/workflows/hetzner-pool-recycle.yml` | Weekly (Monday 04:00 UTC) + manual: boots a fresh pool VM, registers two runner slots, retires the previous VM. |
-| `pool/cloud-init.yaml` | Base OS provisioning (no secrets) — Ubuntu 24.04 + Docker + JDK 17/21 + Node 22 + Maven/Gradle, same toolchain promptLM's snapshot bakes. |
+| `pool/cloud-init.yaml` | Base OS provisioning (no secrets) — Ubuntu 24.04 + Docker + JDK 17/21 + Node 22 + Maven/Gradle, same toolchain promptLM's snapshot bakes, plus `shellcheck`/`locales` and passwordless `sudo` for the `runner` user (see "Missing tools" below). |
 | `pool/setup-pool.sh` | Runs over SSH from the recycle workflow (needs `RUNNER_PAT`): registers the two org-level runner slots as systemd services. |
 | `workflow-templates/hetzner-pool.yml` | Starter template in the "New workflow" picker. |
 
@@ -87,16 +87,66 @@ No nightly snapshot bake is needed here (unlike promptLM's platform) — the
 pool VM boots once per week via `cloud-init.yaml` instead of once per run,
 so there's nothing to pre-bake for speed.
 
-## One-time org setup (admin)
+## One-time setup (admin)
 
-### Org-level secrets
+**Repository-level, not org-level.** The `promptics` org is on GitHub
+Free, which doesn't offer organization secrets/variables at all (that's a
+Team/Enterprise feature) — but that turns out not to cost this design
+anything: the recycle workflow in *this* repo is the only thing that ever
+touches `HCLOUD_TOKEN`, `RUNNER_PAT`, or the SSH key name. No caller repo
+(`agentskills`, `promptics-speech`, ...) needs any secret at all — they
+only ever reference the `promptics-pool` runner label. So everything below
+is a plain **repository secret/variable on `promptics/.github`**, which
+works on every GitHub plan.
 
-Under `https://github.com/organizations/promptics/settings/secrets/actions`:
+### Secrets
 
-| Secret | Source | Visibility |
-|---|---|---|
-| `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) | Selected repos: `.github`, plus repos onboarding to the pool |
-| `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write | Same as above |
+Under `https://github.com/promptics/.github/settings/secrets/actions`
+(**Repository secrets**, not the org-level page):
+
+| Secret | Source |
+|---|---|
+| `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) |
+| `RUNNER_PAT` | GitHub → **classic** PAT (`github.com/settings/tokens/new`) with the **`admin:org`** scope. |
+
+**Why classic, not fine-grained.** Fine-grained PATs don't expose
+org-level self-hosted-runner management at all — there's no "Self-hosted
+runners" entry under Organization permissions to pick, at any scope. Only
+two things can mint/delete an org runner-registration token:
+a classic PAT with `admin:org`, or a GitHub App with the
+`organization_self_hosted_runners` permission.
+
+`admin:org` is broader than strictly needed — it also covers org
+membership, teams, and webhooks, not just runners. The narrower option is
+a **fine-grained** PAT with **Administration: Read/write** scoped to just
+`agentskills` + `promptics-speech` — but that only supports **repo-level**
+runner registration, meaning each pool slot would have to be permanently
+assigned to one specific repo instead of shared. That breaks the actual
+point of pooling for `promptics-speech` (its 13-job-per-push fan-out
+needs several slots available *to it* at once, not one slot it can never
+borrow from). Going with `admin:org` to keep slots shared across repos;
+revisit with a GitHub App (see promptLM's own "Roadmap / known limits" —
+they deferred the same migration) if the broader scope becomes a concern.
+
+### Admin SSH access (optional but recommended)
+
+The recycle workflow generates its own throwaway SSH key each run (create,
+use, delete) — that key is gone by the time the run finishes, so it doesn't
+give a human any lasting way in. To be able to SSH into the pool VM
+yourself later (the "SSH in and check `systemctl status`" step under
+Troubleshooting), add your own key once:
+
+1. Hetzner Console → your project → Security → SSH Keys → add your public
+   key, give it a name.
+2. Set that name as a **repository variable** (not secret — it's just a
+   name) on `promptics/.github`, under
+   `https://github.com/promptics/.github/settings/variables/actions`:
+   `HETZNER_ADMIN_SSH_KEY_NAME`.
+
+Every pool VM the recycle workflow creates will then carry both keys —
+the automation's own (deleted after each run) and yours (persists). Skip
+this and the pool still works fine; you just can't SSH in without adding
+this later.
 
 ### Runner group
 
@@ -145,6 +195,19 @@ Flat regardless of job volume or push frequency — the point of the pool.
 
 ## Troubleshooting
 
+**A job fails on a missing tool / `sudo: command not found` / a package
+GitHub-hosted images ship that this one doesn't.** Expected occasionally —
+GitHub's `ubuntu-latest` image bundles hundreds of preinstalled tools
+(see [actions/runner-images](https://github.com/actions/runner-images)),
+and `cloud-init.yaml` only bakes in what promptics' actual workflows are
+known to need so far (found by porting `agentskills`' `gates.yml` —
+needed `shellcheck` — and `heavy-gates.yml` — needed `sudo locale-gen`,
+which needs `sudo` itself). The `runner` user has passwordless `sudo`
+specifically so a job can self-heal with an `apt-get install -y <tool>`
+step rather than blocking on a cloud-init PR; add the package to
+`cloud-init.yaml`'s `packages:` list too if it's going to recur across
+jobs.
+
 **A job stays queued.** Both slots busy — check with the `gh api` command
 above. If routine, scale per "Sizing".
 
@@ -157,11 +220,14 @@ trigger the recycle workflow manually — it's idempotent.
 runner — add `container:` to isolate, or make one slot `--ephemeral` in
 `setup-pool.sh` if this becomes routine (loses zero-latency for that slot).
 
-**Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`
-scope — needs **Self-hosted runners: Read and write** at the org level.
-(promptLM's ephemeral pattern needs repo-level `Administration` instead —
-different permission, different registration mechanism, don't confuse
-the two when copying a PAT setup from their docs.)
+**Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`.
+Confirm it's a **classic** PAT with `admin:org` — a fine-grained PAT
+produces a 403/404 on the registration-token call because org-level
+runner management isn't exposed to fine-grained PATs at all, regardless
+of what permissions you pick. (promptLM's ephemeral pattern uses a
+fine-grained PAT with repo-level `Administration` instead — that works
+for *their* repo-level registration, a different mechanism entirely.
+Don't copy their PAT setup verbatim for this workflow.)
 
 **Two pool VMs billing simultaneously.** The recycle workflow deletes the
 previous VM only after the new one registers successfully — a mid-run

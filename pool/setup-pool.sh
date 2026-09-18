@@ -7,9 +7,9 @@
 # script needs — never commit a filled-in copy of this with real values.
 #
 # Required environment:
-#   RUNNER_PAT    fine-grained GitHub PAT, resource owner = promptics org,
-#                 Organization permissions -> "Self-hosted runners" ->
-#                 Read and write (to mint a runner registration token)
+#   RUNNER_PAT    Classic GitHub PAT with the admin:org scope (fine-grained
+#                 PATs don't support org-level runner registration at all —
+#                 see docs/hetzner-pool.md "Secrets" for why)
 #   RUNNER_LABEL  label callers use in runs-on:, e.g. "promptics-pool"
 #   POOL_NAME     name prefix for this VM's two runner registrations,
 #                 e.g. "hetzner-pool-01" -> hetzner-pool-01-a / -b

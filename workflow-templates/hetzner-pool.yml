@@ -2,9 +2,10 @@
 # Linux. Best fit for short, frequent jobs (unit tests, lint, gates) — the
 # pool is always on, so there's no per-run provisioning wait or cost.
 #
-# Required org-level secrets HCLOUD_TOKEN and RUNNER_PAT and the
-# promptics-pool runner group should already be set up; see
-# https://github.com/promptics/.github#hetzner-runner-pool.
+# Required repository secrets on promptics/.github (HCLOUD_TOKEN,
+# RUNNER_PAT) and the promptics-pool runner group should already be set
+# up; see https://github.com/promptics/.github#hetzner-runner-pool. This
+# calling repo doesn't need any secrets of its own — only the label below.
 #
 # Not what you need? For a long (20+ min) acceptance/integration suite,
 # use promptLM/.github's ephemeral Hetzner pattern instead — see
