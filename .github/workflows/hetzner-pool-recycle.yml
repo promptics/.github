@@ -20,8 +20,18 @@
 #   HCLOUD_TOKEN   Hetzner Cloud API token (Read & Write) — promptics' OWN
 #                  Hetzner Cloud project. Do not reuse promptLM's token —
 #                  see docs/hetzner-pool.md "Why not share promptLM's setup".
-#   RUNNER_PAT     Fine-grained PAT, resource owner = promptics,
-#                  Organization permissions -> Self-hosted runners: R/W
+#   RUNNER_PAT     CLASSIC PAT with the admin:org scope. Org-level
+#                  self-hosted-runner management (mint/delete a
+#                  registration token) is not exposed to fine-grained
+#                  PATs at all -- github.com/settings/tokens/new, check
+#                  admin:org, set an expiration. Broader than strictly
+#                  needed (admin:org also covers org membership, teams,
+#                  webhooks) -- the narrower alternative is a
+#                  fine-grained PAT with Administration: R/W on selected
+#                  repos, but that only supports REPO-level runner
+#                  registration, which would pin each pool slot to one
+#                  repo and defeat sharing capacity across repos. See
+#                  docs/hetzner-pool.md "Secrets" for the trade-off.
 #                  (an org-scoped PAT can still be stored as a plain repo
 #                  secret — the permission lives on the token, not on
 #                  where the secret is kept)

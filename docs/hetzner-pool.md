@@ -107,7 +107,26 @@ Under `https://github.com/promptics/.github/settings/secrets/actions`
 | Secret | Source |
 |---|---|
 | `HCLOUD_TOKEN` | A **separate** Hetzner Cloud project (don't reuse promptLM's) → Security → API Tokens (Read & Write) |
-| `RUNNER_PAT` | GitHub → fine-grained PAT. Resource owner: **promptics**. Organization permissions → **Self-hosted runners** → Read and write. (The token's *permission* is org-scoped by design — minting a runner-registration token needs that — but the *secret itself* is just stored on this one repo, same as any repo secret.) |
+| `RUNNER_PAT` | GitHub → **classic** PAT (`github.com/settings/tokens/new`) with the **`admin:org`** scope. |
+
+**Why classic, not fine-grained.** Fine-grained PATs don't expose
+org-level self-hosted-runner management at all — there's no "Self-hosted
+runners" entry under Organization permissions to pick, at any scope. Only
+two things can mint/delete an org runner-registration token:
+a classic PAT with `admin:org`, or a GitHub App with the
+`organization_self_hosted_runners` permission.
+
+`admin:org` is broader than strictly needed — it also covers org
+membership, teams, and webhooks, not just runners. The narrower option is
+a **fine-grained** PAT with **Administration: Read/write** scoped to just
+`agentskills` + `promptics-speech` — but that only supports **repo-level**
+runner registration, meaning each pool slot would have to be permanently
+assigned to one specific repo instead of shared. That breaks the actual
+point of pooling for `promptics-speech` (its 13-job-per-push fan-out
+needs several slots available *to it* at once, not one slot it can never
+borrow from). Going with `admin:org` to keep slots shared across repos;
+revisit with a GitHub App (see promptLM's own "Roadmap / known limits" —
+they deferred the same migration) if the broader scope becomes a concern.
 
 ### Admin SSH access (optional but recommended)
 
@@ -188,11 +207,14 @@ trigger the recycle workflow manually — it's idempotent.
 runner — add `container:` to isolate, or make one slot `--ephemeral` in
 `setup-pool.sh` if this becomes routine (loses zero-latency for that slot).
 
-**Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`
-scope — needs **Self-hosted runners: Read and write** at the org level.
-(promptLM's ephemeral pattern needs repo-level `Administration` instead —
-different permission, different registration mechanism, don't confuse
-the two when copying a PAT setup from their docs.)
+**Recycle fails at "Register runner slots."** Almost always `RUNNER_PAT`.
+Confirm it's a **classic** PAT with `admin:org` — a fine-grained PAT
+produces a 403/404 on the registration-token call because org-level
+runner management isn't exposed to fine-grained PATs at all, regardless
+of what permissions you pick. (promptLM's ephemeral pattern uses a
+fine-grained PAT with repo-level `Administration` instead — that works
+for *their* repo-level registration, a different mechanism entirely.
+Don't copy their PAT setup verbatim for this workflow.)
 
 **Two pool VMs billing simultaneously.** The recycle workflow deletes the
 previous VM only after the new one registers successfully — a mid-run
