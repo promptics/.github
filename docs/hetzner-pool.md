@@ -167,16 +167,27 @@ both idle/online. It then recycles itself weekly on its own.
 
 ## Sizing
 
-Starts at **2 concurrent slots on one `cx33`** (4 vCPU/8 GB — same spec
-promptLM validated in production, ~€6.49/mo flat). A 13-job fan-out will
-queue behind 2 slots rather than run all at once initially — that's fine
-(GitHub queues, doesn't fail), but watch queue times after onboarding a
-repo.
+**2 concurrent slots on one `cx43`** (8 vCPU/16 GB, ~€13-14/mo flat).
+Started at `cx33` (4 vCPU/8 GB, ~€6.49/mo) and moved on 2026-09-24.
 
-To scale:
-- **More slots, same VM**: `cx33` → `cx43` (8 vCPU/16 GB, ~€13-14/mo),
-  add a 3rd/4th `actions-runner-N` directory in `cloud-init.yaml` and a
-  matching iteration in `setup-pool.sh`'s loop.
+**Slots are not the thing to scale first.** Two slots on a four-core `cx33`
+gave each job two cores, and `promptics-twodudes`' `gradle build` took about
+20 minutes there against about 14 on an 8-core laptop — the runner was the
+slower machine. That build starts a PostgreSQL per acceptance class, so what
+it is short of is cores, not slots. On 2026-09-23 two builds ran concurrently
+on the `cx33` and **both** were cancelled at the job's `timeout-minutes: 30`
+(promptics-twodudes#317 and #320), one of which only deleted some test
+guards. Adding a third and fourth slot would have made that worse, not
+better.
+
+So the move is `cx33` → `cx43` **at the same two slots**, which takes each
+job from two cores to four. Add slots only once a job's own wall clock is
+comfortable and the queue, not the build, is what people wait on.
+
+To scale further:
+- **More slots, same VM**: add a 3rd/4th `actions-runner-N` directory in
+  `cloud-init.yaml` and a matching iteration in `setup-pool.sh`'s loop —
+  worth it when jobs queue while cores sit idle, not before.
 - **More VMs**: run the create step in `hetzner-pool-recycle.yml` twice
   with different `POOL_NAME`s — only worth it if CPU, not job count,
   becomes the bottleneck.
@@ -188,8 +199,8 @@ Check current usage:
 
 | Server type | Monthly cap | Slots |
 |---|---|---|
-| `cx33` (default) | ~€6.49 | 2 |
-| `cx43` | ~€13-14 | 3-4 |
+| `cx33` | ~€6.49 | 2 (2 cores a job — too few for a container-heavy build) |
+| `cx43` (default) | ~€13-14 | 2 at 4 cores a job, or 3-4 if jobs are light |
 
 Flat regardless of job volume or push frequency — the point of the pool.
 

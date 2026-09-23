@@ -52,7 +52,12 @@ concurrency:
 
 env:
   RUNNER_LABEL: promptics-pool
-  SERVER_TYPE: cx33          # 4 vCPU / 8 GB — same spec promptLM validated
+  # 8 vCPU / 16 GB, ~€13-14/mo. Was `cx33` (4 vCPU) until 2026-09-24, at two slots.
+  # Two slots on four cores is two cores a job, and promptics-twodudes' `gradle build`
+  # takes ~20 min there against ~14 min on an 8-core laptop — the runner was the slower
+  # machine. The build starts a PostgreSQL per acceptance class, so it wants cores, not
+  # more slots: staying at two slots on eight cores gives each job four rather than two.
+  SERVER_TYPE: cx43
   LOCATION: fsn1
 
 jobs:
