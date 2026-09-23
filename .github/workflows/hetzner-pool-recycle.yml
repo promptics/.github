@@ -76,6 +76,14 @@ jobs:
             | tar -xz -C /usr/local/bin hcloud
           hcloud version
 
+      - name: List what this project actually has (debug visibility)
+        run: |
+          echo "SSH keys visible to this HCLOUD_TOKEN's project:"
+          hcloud ssh-key list -o json | jq -r '.[] | "  name=\"\(.name)\"  fingerprint=\(.fingerprint)"'
+          echo
+          echo "Servers currently in this project:"
+          hcloud server list -o json | jq -r '.[] | "  \(.name)  \(.status)"'
+
       - name: Record the currently-running pool VM (if any)
         id: previous
         run: |
