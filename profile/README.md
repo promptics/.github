@@ -1,1 +1,3 @@
-<img width="931" height="258" alt="image" src="https://github.com/user-attachments/assets/003c2569-9869-4f26-be01-be5e3ae10667" />
+<a href="https://promptics.io"><img src="hero.svg" width="100%" alt="The bottleneck moved! You've automated your workflow. Now what? We help you build software faster, with control. And we clear the bottlenecks that come with it."></a>
+
+**Attention management for AI-native teams.** Read more on [promptics.io](https://promptics.io).
