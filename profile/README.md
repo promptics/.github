@@ -6,7 +6,7 @@ Agents write the code today, and tomorrow they automate the rest of the workflow
 
 ## How we work
 
-We build our tools with our own tools. Agents build our software in small slices on our own infrastructure. A person approves every plan and every merge, and every run is traced and reviewed. Working this way shows us where people, teams and methods start to struggle, and that is what we build for next. It is early and in private preview.
+We build our tools with our own tools. Agents build our software in small slices on our own infrastructure. A person approves every plan and every finished feature, and every run is traced and reviewed. Working this way shows us where people, teams and methods start to struggle, and that is what we build for next. It is early and in private preview.
 
 ## What is public here
 
