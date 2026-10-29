@@ -144,8 +144,8 @@ t_sub = t_swipe + 900
 ys1 = y3 + H1 * 0.22 + 28 + SUB * 1.05
 ys2 = ys1 + SUB_LH
 out.append('<g class="sub">')
-for i, (line, ys) in enumerate((("We build your software factory, with control.", ys1),
-                                 ("Then we clear the bottlenecks that come right after.", ys2))):
+for i, (line, ys) in enumerate((("We're here for what comes after the software factory.", ys1),
+                                 ("Wherever you are on the way there.", ys2))):
     slam_words(sub, [(line, PAD)], SUB, SUB_TR, ys, INK, t_sub + i * 520, "s2")
     css.append(f".sub{{animation:jolt .28s ease-out {t_sub + 220:.0f}ms}}") if i == 0 else None
 out.append("</g>")
@@ -168,11 +168,11 @@ style = f"""
 """
 svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" '
-    f'aria-label="The bottleneck moved! You\'ve automated your workflow. Now what? We build your software factory, '
-    f'with control. Then we clear the bottlenecks that come right after.">'
+    f'aria-label="The bottleneck moved! You\'ve automated your workflow. Now what? We\'re here for what comes after the software factory. '
+    f'Wherever you are on the way there.">'
     f"<style>{style}</style>"
     f'<rect width="{W}" height="{H}" rx="24" fill="{BG}"/>'
-    + f'<g transform="translate({W - PAD - 382 * 0.3913:.1f},{PAD - 24}) scale(0.3913) translate(-36,-2)">{LOGO}</g>'
+    + f'<g class="logo" transform="translate({W - PAD - 382 * 0.3913:.1f},{PAD - 24}) scale(0.3913) translate(-36,-2)">{LOGO}</g>'
     + "".join(out)
     + "</svg>"
 )
