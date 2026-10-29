@@ -64,6 +64,10 @@ def width(face, text, size, tracking):
     return sum(a for *_, a in face.glyphs(text, size, tracking, 0, 0))
 
 
+# the promptics.io logo (speech bubble and wordmark), drawn in its own 36 2 382 92 box
+LOGO = f'''<path d="M102.7,8H52.2c-3.1,0-5.9,1.3-8,3.3c-3.2,3.2-3.3,7.2-3.3,8c0,12.5,0,25,0,37.5c0,0.7,0,1.4,0,2.1v32.3l18.3-16.7c11.2,0,32.5,0,43.5,0c6.2,0,11.3-5.1,11.3-11.3V19.3C114,13.1,109,8,102.7,8z" fill="none" stroke="{INK}" stroke-width="7.4758" stroke-linecap="round" stroke-linejoin="round"/><polyline points="69,57.1 87.5,41.3 69,25.5" fill="none" stroke="{INK}" stroke-width="7.4758" stroke-linecap="round" stroke-linejoin="round"/><path d="M161.6,36.8c0,7.6-5.6,13.5-12.5,13.5c-3.7,0-6.5-1.4-8.3-3.7v13.3h-6.6V24h6.6v3c1.8-2.4,4.6-3.7,8.3-3.7C155.9,23.3,161.6,29.2,161.6,36.8zM154.9,36.8c0-4.3-3-7.2-7.1-7.2s-7.1,2.9-7.1,7.2s3,7.2,7.1,7.2S154.9,41.1,154.9,36.8zM179.6,23.5v7.4c-3.4-0.4-7.8,1.1-7.8,6.5v12.3h-6.6V24h6.6v4.4C173.1,24.9,176.4,23.5,179.6,23.5zM180.1,36.8c0-7.6,6-13.5,13.5-13.5s13.6,5.9,13.6,13.5s-6,13.5-13.6,13.5C186.1,50.3,180.1,44.4,180.1,36.8zM200.6,36.8c0-4.2-3-7.1-7-7.1c-3.9,0-6.9,2.9-6.9,7.1s3,7.1,6.9,7.1C197.6,43.9,200.6,40.9,200.6,36.8zM248.9,33.8v15.8h-6.6V34.3c0-3-1.5-4.9-4.3-4.9c-2.9,0-4.8,1.9-4.8,5.8v14.4h-6.6V34.3c0-3-1.5-4.9-4.3-4.9s-4.8,1.9-4.8,5.8v14.4h-6.6V24h6.6v2.7c1.4-2.2,3.8-3.4,7.1-3.4c3.2,0,5.5,1.3,7,3.7c1.6-2.3,4.2-3.7,7.6-3.7C245.1,23.3,248.9,27.4,248.9,33.8zM281,36.8c0,7.6-5.6,13.5-12.5,13.5c-3.7,0-6.5-1.4-8.3-3.7v13.3h-6.6V24h6.6v3c1.8-2.4,4.6-3.7,8.3-3.7C275.3,23.3,281,29.2,281,36.8zM274.4,36.8c0-4.3-3-7.2-7.1-7.2s-7.1,2.9-7.1,7.2s3,7.2,7.1,7.2C271.3,44,274.4,41.1,274.4,36.8zM292.9,30.3V41c0,2.8,2,2.8,5.8,2.6v6c-9.3,1-12.4-1.7-12.4-8.6V30.3h-4.5V24h4.5v-7.3h6.6V24h5.8v6.4h-5.8V30.3zM301.6,16.8c0-2.2,1.8-4.1,4.1-4.1c2.3,0,4.1,1.9,4.1,4.1s-1.8,4.1-4.1,4.1C303.5,20.9,301.6,19,301.6,16.8zM302.4,24h6.6v25.6h-6.6V24zM312.7,36.8c0-7.6,5.7-13.5,13.5-13.5c5,0,9.4,2.7,11.5,6.6l-5.7,3.3c-1-2.1-3.2-3.4-5.8-3.4c-3.9,0-6.9,2.9-6.9,7s2.9,7,6.9,7c2.7,0,4.9-1.3,5.9-3.4l5.7,3.3c-2.2,4-6.6,6.7-11.6,6.7C318.4,50.3,312.7,44.4,312.7,36.8zM359.6,42.1c0,5.5-4.8,8.2-10.3,8.2c-5.1,0-8.9-2.2-10.8-6.1l5.7-3.2c0.7,2.1,2.5,3.3,5,3.3c2.1,0,3.5-0.7,3.5-2.2c0-3.7-13.2-1.7-13.2-10.7c0-5.2,4.5-8.2,9.7-8.2c4.2,0,7.7,1.9,9.7,5.4l-5.6,3.1c-0.8-1.6-2.2-2.6-4.1-2.6c-1.6,0-3,0.7-3,2.1C346.3,35,359.6,32.7,359.6,42.1z" fill="{INK}"/><path d="M363,45.9c0-2.4,1.9-4.4,4.4-4.4c2.4,0,4.4,1.9,4.4,4.4c0,2.4-1.9,4.4-4.4,4.4C364.9,50.3,363,48.3,363,45.9zM375.4,16.8c0-2.2,1.8-4.1,4.1-4.1c2.3,0,4.1,1.9,4.1,4.1s-1.8,4.1-4.1,4.1C377.3,20.9,375.4,19,375.4,16.8zM376.2,24h6.6v25.6h-6.6V24zM386.5,36.8c0-7.6,6-13.5,13.5-13.5s13.6,5.9,13.6,13.5s-6,13.5-13.6,13.5S386.5,44.4,386.5,36.8zM407,36.8c0-4.2-3-7.1-7-7.1c-3.9,0-6.9,2.9-6.9,7.1s3,7.1,6.9,7.1C404,43.9,407,40.9,407,36.8z" fill="{ACCENT}"/>'''
+
+
 h1 = Face(800)
 sub = Face(600)
 H1, H1_LH, H1_TR = 84, 84 * 0.98, -0.045
@@ -140,8 +144,8 @@ t_sub = t_swipe + 900
 ys1 = y3 + H1 * 0.22 + 28 + SUB * 1.05
 ys2 = ys1 + SUB_LH
 out.append('<g class="sub">')
-for i, (line, ys) in enumerate((("We help you build software faster, with control.", ys1),
-                                 ("And we clear the bottlenecks that come with it.", ys2))):
+for i, (line, ys) in enumerate((("We're here for what comes after the software factory.", ys1),
+                                 ("Wherever you are on the way there.", ys2))):
     slam_words(sub, [(line, PAD)], SUB, SUB_TR, ys, INK, t_sub + i * 520, "s2")
     css.append(f".sub{{animation:jolt .28s ease-out {t_sub + 220:.0f}ms}}") if i == 0 else None
 out.append("</g>")
@@ -164,10 +168,11 @@ style = f"""
 """
 svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" '
-    f'aria-label="The bottleneck moved! You\'ve automated your workflow. Now what? We help you build software faster, '
-    f'with control. And we clear the bottlenecks that come with it.">'
+    f'aria-label="The bottleneck moved! You\'ve automated your workflow. Now what? We\'re here for what comes after the software factory. '
+    f'Wherever you are on the way there.">'
     f"<style>{style}</style>"
     f'<rect width="{W}" height="{H}" rx="24" fill="{BG}"/>'
+    + f'<g class="logo" transform="translate({W - PAD - 382 * 0.3913:.1f},{PAD - 24}) scale(0.3913) translate(-36,-2)">{LOGO}</g>'
     + "".join(out)
     + "</svg>"
 )
